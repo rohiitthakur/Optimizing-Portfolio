@@ -1,0 +1,508 @@
+---
+title:"Optimizing Portfolio"
+author: "ROHIT THAKUR"
+PGID: "12120040"
+output:
+  html_document:
+    df_print: paged
+editor_options:
+  chunk_output_type: inline
+---
+
+
+
+```{r}
+rm(list=ls())
+pacman::p_load(tidyverse,tidyquant,PortfolioAnalytics,quantmod,PerformanceAnalytics,zoo,
+               plotly,ggthemes,timetk)
+library(PortfolioAnalytics)
+library(crayon)
+library(quantmod)
+
+```
+
+```{r}
+
+#SBI BANK
+SBIBANK <- tseries::get.hist.quote(instrument="SBIN.NS", start="2007-07-01",
+                      end="2018-07-31", quote="AdjClose",
+                      provider="yahoo", origin="1970-01-01",
+                      compression="m", retclass="zoo")
+SBIBANK <- na.omit(SBIBANK)
+
+#TATA MOTORS
+TATAMOTORS <- tseries::get.hist.quote(instrument="TATAMOTORS.NS",start="2007-07-01",
+                      end="2018-07-31", quote="AdjClose",
+                      provider="yahoo", origin="1970-01-01",
+                      compression="m", retclass="zoo")
+TATAMOTORS <- na.omit(TATAMOTORS)
+#HCLTECH
+HCLTECH <- tseries::get.hist.quote(instrument="HCLTECH.NS", start="2007-07-01",
+                      end="2018-07-31", quote="AdjClose",
+                      provider="yahoo", origin="1970-01-01",
+                      compression="m", retclass="zoo")
+HCLTECH <- na.omit(HCLTECH)
+Britannia <- tseries::get.hist.quote(instrument="BRITANNIA.NS", start="2007-07-01",
+                      end="2018-07-31", quote="AdjClose",
+                      provider="yahoo", origin="1970-01-01",
+                      compression="m", retclass="zoo")
+Britannia <- na.omit(Britannia)
+DLF <- tseries::get.hist.quote(instrument="DLF.NS", start="2007-07-01",
+                      end="2018-07-31", quote="AdjClose",
+                      provider="yahoo", origin="1970-01-01",
+                      compression="m", retclass="zoo")
+DLF <- na.omit(DLF)
+HeroMotors <- tseries::get.hist.quote(instrument="HEROMOTOCO.NS", start="2007-07-01",
+                      end="2018-07-31", quote="AdjClose",
+                      provider="yahoo", origin="1970-01-01",
+                      compression="m", retclass="zoo")
+HeroMotors <- na.omit(HeroMotors)
+IOC <- tseries::get.hist.quote(instrument="IOC.NS", start="2007-07-01",
+                      end="2018-07-31", quote="AdjClose",
+                      provider="yahoo", origin="1970-01-01",
+                      compression="m", retclass="zoo")
+IOC <- na.omit(IOC)
+AXIS <- tseries::get.hist.quote(instrument="AXISBANK.NS", start="2007-07-01",
+                      end="2018-07-31", quote="AdjClose",
+                      provider="yahoo", origin="1970-01-01",
+                      compression="m", retclass="zoo")
+AXIS <- na.omit(AXIS)
+ZeeTV <- tseries::get.hist.quote(instrument="ZEEL.NS", start="2007-07-01",
+                      end="2018-07-31", quote="AdjClose",
+                      provider="yahoo", origin="1970-01-01",
+                      compression="m", retclass="zoo")
+ZeeTV <- na.omit(ZeeTV)
+TCS <- tseries::get.hist.quote(instrument="TCS.NS", start="2007-07-01",
+                      end="2018-07-31", quote="AdjClose",
+                      provider="yahoo", origin="1970-01-01",
+                      compression="m", retclass="zoo")
+TCS <- na.omit(TCS)
+
+#MERGING ALL THE STOCK PRICES      
+Portfolio.Prices <- merge(SBIBANK, TATAMOTORS,HCLTECH,Britannia,DLF,
+                      HeroMotors, IOC,AXIS,ZeeTV,TCS)   
+  
+Portfolio.Returns <- NULL
+
+#CALCULATING THE RETURNS FOR THE PORTFOLIO
+Portfolio.Returns = Return.calculate(Portfolio.Prices, method="simple")
+Portfolio.Returns = na.omit(Portfolio.Returns)
+
+
+Portfolio.Names <- c("SBIBANK", "TATAMOTORSitals", "HCLTECH", "Britannia", "DLF",
+                 "HeroMotors", "IOC", "AXIS", "ZeeTV", "TCS")
+
+#Define column names 
+names(Portfolio.Returns) <- Portfolio.Names
+
+# Set Equal weight benchmark
+n <- ncol(Portfolio.Returns)
+equal_weights <- rep(1 / n, n)
+
+
+benchmark_returns <- Return.portfolio(R = Portfolio.Returns,
+                                      weights = equal_weights, 
+                                      rebalance_on = "years")
+
+colnames(benchmark_returns) <- "Benchmark"
+
+# Benchmark - Equal weightage Portfolio
+table.AnnualizedReturns(benchmark_returns)
+# Given equal weights of 0.1 for 10 assets
+```
+
+```{r}
+cat(bold(red('Objectives for Optimization\n')))
+
+# 1. minimize variance
+# 2. maximize return
+# 3. maximize quadratic utility
+# 4. minimize ETL
+
+# Create portfolio specification object
+pspec <- portfolio.spec(assets=Portfolio.Names)
+
+cat(bold(red('DEFINE CONSTRAINTS AND OBJECTIVES\n')))
+
+# Full investment constraint
+FI_Constr <- weight_sum_constraint(min_sum=1, max_sum=1)
+
+# Long only constraint
+LO_Constr <- box_constraint(assets=pspec$assets, min=0, max=1)
+
+# Position limit constraint
+PosLimit_Constr <- position_limit_constraint(assets=pspec$assets, max_pos=3)
+
+# Group constraint
+Group_Constr <- group_constraint(assets=pspec$assets, groups=list(c(1,5,8,10), c(2,3,4,6), c(7,9)), 
+                                 group_min=0, group_max=0.5)
+
+# Position limit constraint
+PosLimit_Constr <- position_limit_constraint(assets=pspec$assets, max_pos=3)
+
+# Target mean return constraint
+TargetReturn_constr <- return_constraint(return_target=0.015)
+
+# Diversification constraint
+Div_Constr <- diversification_constraint(div_target=0.7)
+
+# Turnover constraint
+TurnOver_Constr <- turnover_constraint(turnover_target=0.2)
+
+# Transaction cost contraint
+TransCost_Constr <- transaction_cost_constraint(assets=pspec$assets, ptc=0.01)
+
+##### Objectives #####
+
+# Return objective
+maxret_obj <- return_objective(name="mean")
+
+# Risk objective
+minrisk_obj <- portfolio_risk_objective(name="var")
+
+# ETL objective
+etl_obj <- portfolio_risk_objective(name="ETL")
+
+#***************1. Min Variance Optimization**********************
+
+# FOR Global minimum variance portfolio, Only specify the full investment constraint and min risk objective
+library(ROI)
+library(quadprog)
+library(ROI.plugin.quadprog)
+library(ROI.plugin.glpk)
+library(ROI.plugin.symphony)
+library(PerformanceAnalytics)
+# Consider Global minimum portfolio as Base portfolio
+opt_base <- optimize.portfolio(R=Portfolio.Returns, portfolio=pspec,
+                                 constraints=list(FI_Constr),
+                                 objectives=list(minrisk_obj),
+                                 optimize_method="ROI")
+opt_base
+
+```
+```{r}
+# Calculate base portfolio returns
+base_returns <- Return.portfolio(Portfolio.Returns, extractWeights(opt_base))
+
+colnames(base_returns) <- "Base"
+####Global min portfolio back testing
+
+#Run the optimization with periodic balancing
+bt_opt_base <- optimize.portfolio.rebalancing(R = Portfolio.Returns, portfolio = pspec,
+                                           constraints = list(FI_Constr), 
+                                           objectives = list(minrisk_obj), 
+                                           rebalance_on = "months", optimize_method = "ROI",
+                                           training_period = 60, rolling_window = 60)
+
+backtesting_base_returns <- Return.portfolio(Portfolio.Returns, extractWeights(bt_opt_base))
+
+colnames(backtesting_base_returns) <- "BackTesting_Base"
+
+# Annualized performance
+table.AnnualizedReturns(cbind(benchmark_returns, base_returns, backtesting_base_returns))
+#Back Testing yielded better results in the past. so our base portfolio is good.
+```
+
+```{r}
+
+# Chart the optimal weights for the back tested base portfolio 
+chart.Weights(bt_opt_base, colorset=tim12equal)
+
+#Tatamotors and DLF has got negative weightages when forming global min portfolio
+
+```
+
+
+```{r}
+#######CONSTRAINED MIN VARIANCE WITH ROI############
+
+#Min variance portfolio with target return constraint
+tr_opt_minvar <- optimize.portfolio(R=Portfolio.Returns, portfolio=pspec,
+                                 constraints = list(FI_Constr, LO_Constr,
+                                                    TargetReturn_constr),
+                                 objectives = list(minrisk_obj),
+                                 optimize_method = "ROI", trace=TRUE)
+
+tr_opt_minvar
+
+```
+
+```{r}
+#Calculate returns under specified constraints and objectives
+tr_minvar_returns <- Return.portfolio(Portfolio.Returns, extractWeights(tr_opt_minvar))
+colnames(tr_minvar_returns) <- "Min Variance with TR"
+
+# Backtest
+bt_opt_minvar <- optimize.portfolio.rebalancing(R = Portfolio.Returns, portfolio = pspec,
+                                             constraints = list(FI_Constr,LO_Constr,
+                                                                TargetReturn_constr),
+                                             objectives = list(minrisk_obj),
+                                             rebalance_on = "months", optimize_method = "ROI",
+                                             training_period = 60, rolling_window = 60)
+
+bt_minvar_returns <- Return.portfolio(Portfolio.Returns, extractWeights(bt_opt_minvar))
+
+colnames(bt_minvar_returns) <- "With Back Testing"
+
+table.AnnualizedReturns(cbind(tr_minvar_returns, bt_minvar_returns))
+#Backtesting the min variance portfolio when target return is set to 0.15, 
+#shows that not only the realized return is slightly higher than the expected return 
+#but also actual risk might be greater than the expected risk.
+#However we can recommend min variance portfolio of 15% TR as it has higher relaized sharpe ratio.
+```
+
+```{r}
+chart.Weights(bt_opt_minvar, colorset=tim12equal)
+
+```
+
+```{r}
+#Box constraint 1 - a common cap for all the assets
+Box_Constr1 <- box_constraint(assets=pspec$assets, min=0.01, max=0.4)
+
+
+box1_opt_minvar <- optimize.portfolio(R=Portfolio.Returns, portfolio=pspec,
+                                      constraints = list(FI_Constr, LO_Constr,
+                                                         TargetReturn_constr, Box_Constr1),
+                                      objectives = list(minrisk_obj),
+                                      optimize_method = "ROI", trace=TRUE)
+box1_opt_minvar
+
+cat("Box Constraint1 - Min:", Box_Constr1$min[[1]], " Max: ", Box_Constr1$max[[1]], "\n")
+```
+
+```{r}
+#Calculate returns under specified constraints and objectives
+box1_minvar_returns <- Return.portfolio(Portfolio.Returns, extractWeights(box1_opt_minvar))
+colnames(box1_minvar_returns) <- "MinVariance_TR_Box1"
+
+# Backtest for min variance with TR and BOX2 constraints
+bt_box1_opt_minvar <- optimize.portfolio.rebalancing(R = Portfolio.Returns, portfolio = pspec,
+                                             constraints = list(FI_Constr,LO_Constr,
+                                                                TargetReturn_constr, Box_Constr1),
+                                             objectives = list(minrisk_obj),
+                                             rebalance_on = "months", optimize_method = "ROI",
+                                             training_period = 60, rolling_window = 60)
+
+bt_box1_minvar_returns <- Return.portfolio(Portfolio.Returns, extractWeights(bt_box1_opt_minvar))
+colnames(bt_box1_minvar_returns) <- "BackTesting_TR_Box1"
+
+table.AnnualizedReturns(cbind(box1_minvar_returns, bt_box1_minvar_returns))
+##Putting cap on the asset weightage yielded higher return than the expected return 
+#but with a slightly increased risk and lower sharpe ratio.
+#We can still experiment with different min and max values to see if we can get better optimal weights
+#and there by higher returns to risk for our portfolio.
+```
+
+```{r}
+chart.Weights(bt_box1_opt_minvar, colorset=tim12equal)
+
+```
+
+```{r}
+#Box constraint 2 - separate caps for individual assets
+Box_Constr2 <- box_constraint(assets = pspec$assets,
+                            min=c(0, 0.02, 0.02, 0.04, 0.01, 0.03, 0.04, 0.01, 0.005, 0),
+                            max=c(0, 0.7, 0.8, 0.6, 0.8, 0.75, 0.8, 0.7, 0.8, 0))
+box2_opt_minvar <- optimize.portfolio(R=Portfolio.Returns, portfolio=pspec,
+                                      constraints = list(FI_Constr, LO_Constr,
+                                                         TargetReturn_constr, Box_Constr2),
+                                      objectives = list(minrisk_obj),
+                                      optimize_method = "ROI", trace=TRUE)
+box2_opt_minvar
+```
+```{r}
+#Calculate returns under specified constraints and objectives
+box2_minvar_returns <- Return.portfolio(Portfolio.Returns, extractWeights(box2_opt_minvar))
+colnames(box2_minvar_returns) <- "MinVariance_TR_Box2"
+table.AnnualizedReturns(cbind(box1_minvar_returns, box2_minvar_returns))
+#Box 2 constraint on min variance portfolio has better return to risk ratio compared to 
+#Box 1 constraint. Which means rather than generalizing same cap values for all the assets,
+# we should have individual cap values on each asset according to thier historical return data.
+```
+
+
+```{r}
+#add box and group constraint but no target return
+bg_opt_minvar <- optimize.portfolio(R = Portfolio.Returns, portfolio = pspec,
+                                                constraints = list(FI_Constr, LO_Constr, 
+                                                             Box_Constr2, Group_Constr),
+                                                optimize_method = "ROI", trace=TRUE)
+bg_opt_minvar
+
+```
+
+```{r}
+bg_minvar_returns <- Return.portfolio(Portfolio.Returns, extractWeights(bg_opt_minvar))
+colnames(bg_minvar_returns) <- "MinVarBox&Group"
+
+bt_bg_opt_minvar <- optimize.portfolio.rebalancing(R = Portfolio.Returns, portfolio = pspec,
+                                          constraints = list(FI_Constr, LO_Constr, 
+                                                             Box_Constr2, Group_Constr),
+                                          rebalance_on = "months", optimize_method = "ROI",
+                                          training_period = 60, rolling_window = 60)
+
+# Calculate portfolio returns
+bt_bg_minvar_returns <- Return.portfolio(Portfolio.Returns, extractWeights(bt_bg_opt_minvar))
+colnames(bt_bg_minvar_returns) <- "BackTestingBox&Group"
+# Annualized performance 
+table.AnnualizedReturns(cbind(bg_minvar_returns, bt_bg_minvar_returns))
+#Portfolio with box and group constraints indiactes high risk than returns
+#Box2 and group constraints combined together did not yield better results. 
+#so portfolio with these constraitns is not recommended for this case.
+```
+
+```{r}
+compareReturns <- cbind(base_returns, tr_minvar_returns, 
+                        box1_minvar_returns, box2_minvar_returns, bg_minvar_returns)
+colnames(compareReturns) <- c("Base", "MinVar_TR", "MinVar_Box1", "Minvar_Box2", "Minvar_Box2_Group")
+
+# compare portfolios with different constraints
+table.AnnualizedReturns(compareReturns)
+#Our base portfolio has the best return to risk ratio compared to min variance portfolio with constraints.
+```
+
+```{r}
+#Create an initial portfolio object with leverage and box constraints
+init_portfolio <- portfolio.spec(assets=Portfolio.Names)
+init_portfolio <- add.constraint(portfolio=init_portfolio, type="leverage", min_sum=0.99, max_sum=1.01)
+init_portfolio <- add.constraint(portfolio=init_portfolio, type="box", min=0.05, max=0.65)
+
+#Add constraints to maximize mean returns
+maxreturns <- add.objective(portfolio=init_portfolio, type="return", name="mean")
+#Run the optimization.
+MaxReturns_OptPortfolio <- optimize.portfolio(R=Portfolio.Returns, portfolio=maxreturns,
+                                              optimize_method="ROI", trace=TRUE)
+MaxReturns_OptPortfolio
+
+```
+
+```{r}
+chart.RiskReward(MaxReturns_OptPortfolio,return.col="mean", risk.col="StdDev",
+ chart.assets=TRUE, main="Risk Reward Chart for Maximum Return")
+```
+```{r}
+#Back Testing
+#Initil training period of 60 months is chosen
+bt_maxret <- optimize.portfolio.rebalancing(Portfolio.Returns, maxreturns,
+                                            optimize_method="ROI", rebalance_on="months",
+                                            training_period=60)
+bt_maxret
+
+
+```
+```{r}
+chart.Weights(bt_maxret, colorset=tim12equal)
+```
+```{r}
+max_returns <- Return.portfolio(Portfolio.Returns, extractWeights(MaxReturns_OptPortfolio))
+colnames(max_returns) <- "Max Return Portfolio"
+
+bt_max_returns <- Return.portfolio(Portfolio.Returns, extractWeights(bt_maxret))
+colnames(bt_max_returns) <- "BackTesting"
+
+table.AnnualizedReturns(cbind(max_returns, bt_max_returns))
+#We can recommend Max Return Portfolio as the back testing shows that the realized returns are higher
+#with significantly lower risk compared to expected returns and risk values.
+```
+
+
+```{r}
+
+cat(bold(red('Maximizing Quadratic Utility\n')))
+
+#Set constraints - full investment, long only
+#set objectives - return, risk and a risk aversion value of 0.35
+
+ret_obj <- return_objective(name="mean")
+# risk_aversion parameter is for controlling how much the variance need to be penalized
+var_obj <- portfolio_risk_objective(name="var", risk_aversion=0.35)
+#Run the optimization.
+opt_qu <- optimize.portfolio(R=Portfolio.Returns, portfolio=pspec, 
+                             constraints = list(FI_Constr, LO_Constr),
+                             objectives = list(ret_obj, var_obj),
+                             optimize_method='ROI', trace=TRUE)
+print(opt_qu)
+
+#Except for Britannia and HCL Tech all the other assets are given a weightage of 0 to maximize the utility.
+#Note: Risk aversion is set to 0.35 because we got all NA values when risk aversion is set to 0.25
+```
+
+
+````{r}
+#BackTesting
+bt_qu <- optimize.portfolio.rebalancing(Portfolio.Returns, portfolio=pspec,
+                                        constraints=list(FI_Constr, LO_Constr), 
+                                        objectives=list(ret_obj, var_obj),
+                                        optimize_method='ROI', rebalance_on='months',
+                                        training_period=60, rolling_window = 60)
+bt_qu <- na.omit(bt_qu)
+qu_returns <- Return.portfolio(Portfolio.Returns, na.omit(extractWeights(opt_qu)))
+colnames(qu_returns) <- "QU"
+
+bt_qu_returns <- Return.portfolio(Portfolio.Returns, na.omit(extractWeights(bt_qu)))
+colnames(bt_qu_returns) <- "BackTested_QU"
+
+table.AnnualizedReturns(cbind(qu_returns, bt_qu_returns))
+#We can recommend Max QU portfolio because Back testing this portfolio has better return to risk ratio, less deviation/risk and realized returns amost match with the expected returns.
+```
+
+```{r}
+#Minimizing Expected Tail Loss
+
+etl_Box_constr <- box_constraint(assets=pspec$assets, min=0.05, max=0.65)
+leverage_constr <- leverage_exposure_constraint(assets=pspec$assets, min_sum=0.99, max_sum=1.01)
+
+opt_etl <- optimize.portfolio(Portfolio.Returns, portfolio=pspec, 
+                              constraints = list(etl_Box_constr, leverage_constr),
+                              objectives = list(etl_obj),
+                              optimize_method = "ROI", trace=TRUE)
+opt_etl
+
+```
+```{r}
+chart.RiskReward(opt_etl,return.col="mean", risk.col="StdDev",
+ chart.assets=TRUE, main="Risk Reward Chart for Mimimizing Expected Tail Loss")
+```
+```{r}
+etl_returns <- Return.portfolio(Portfolio.Returns, extractWeights(opt_etl))
+colnames(etl_returns) <- "ETL"
+
+bt_opt_etl <- optimize.portfolio.rebalancing(Portfolio.Returns, portfolio = pspec,
+                                             constraints = list(etl_Box_constr, leverage_constr),
+                                             objectives = list(etl_obj),
+                                             optimize_method = "ROI", rebalance_on = "months",
+                                             training_period = 60, rolling_window = 60)
+
+bt_etl_returns <- Return.portfolio(Portfolio.Returns, extractWeights(bt_opt_etl))
+colnames(bt_etl_returns) <- "BackTested_ETL"
+
+table.AnnualizedReturns(cbind(etl_returns, bt_etl_returns))
+
+#We can recommed Min ETL portfolio as the back tested results indicate better return to risk ratio. 
+#Back tested reults are less deviating compared to expected results eventhough the actual return is 2% less than the expected return.
+
+```
+finalComparision <- table.AnnualizedReturns(cbind(base_returns, tr_minvar_returns, box1_minvar_returns, 
+                         max_returns, qu_returns, etl_returns))
+
+colnames(finalComparision) <- c("Base", "MinRisk", "Box1", "MaxReturn", "QU", "ETL")
+
+backtestedFinal <- table.AnnualizedReturns(cbind(backtesting_base_returns, bt_minvar_returns, 
+                                                bt_box1_minvar_returns, bt_max_returns, 
+                                                bt_qu_returns, bt_etl_returns ))
+
+colnames(backtestedFinal) <- c("Base", "MinRisk", "Box1", "MaxReturn", "QU", "ETL")
+
+#final portfolio results
+finalComparision
+
+```
+
+```{r}
+#Back tested results
+backtestedFinal
+#Back testing consistently showed that all the portfolios have better returns in the past except for the 
+#portfolio with box1 constraint.
+```
+
