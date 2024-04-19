@@ -1,0 +1,279 @@
+---
+title: "ALGO Trading"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: 
+    fig_width: 5
+    fig_height: 4
+editor_options: 
+  chunk_output_type: console
+---
+ 
+
+```{r}
+library(devtools)
+library(quantmod)
+library(PerformanceAnalytics)
+library(quantstrat)
+library(blotter)
+library(xts)
+library(FinancialInstrument)
+library(plotly)
+library(ggplot2)
+
+#set the time zone to "Asia/Kolkata"
+Sys.setenv(TZ="Asia/Kolkata")
+#set the currency to INR
+currency('INR')
+
+```
+
+```{r}
+#Let us import NIFTY data from Jan 1st 2012 to Dec 31st 2017.
+init_date <- "2011-12-31" #the date on which we want to intialize the portfolio and account
+start_date <- "2012-01-01" #the date from which we want to collect the data
+end_date <- "2017-12-31" #the date untill when we want to collect the data
+init_equity <- 100000 #initial account equity value
+adjustment <- TRUE #TRUE when we want to adjust prices otherwise FALSE
+
+getSymbols(Symbols = "^NSEI", src = "yahoo", from = start_date, to = end_date, adjust = adjustment)
+
+knitr::kable(head(NSEI))
+
+NSEI=na.omit(NSEI)
+stock("NSEI",currency="INR",multiplier = 1)
+
+library(plotly)
+df <- data.frame(Date=index(NSEI),coredata(NSEI))
+
+#When opening prices are higher than closing prices bar is red in color and 
+#When opening prices are lower than closing prices bar is green in color.
+plot_ly(x = df$Date, type="candlestick",
+          open = df$NSEI.Open, close = df$NSEI.Close,
+          high = df$NSEI.High, low = df$NSEI.Low)
+
+#Interpretation:
+
+#As we see in the graph above, green color is predominant which means that more often the opening prices are #lower than the closing prices of the stock market. The prices over all have an upward trend.Following Random walk behavior indicating the unpredictability of the stock market.
+
+# The smoothened price graph of the stock market shows a considerable downfall of market prices in the beginning and the ending of the year 2016 signifying some important event...for Example, U.S presidential elections etc.,
+
+```
+
+
+```{r}
+
+#Setup strategy
+strategy.st<-"basic_strat"
+portfolio.st<-"basic_portfolio"
+account.st<-"basic_account"
+
+#If there are any other portfolios or account book with these names remove them using rm.strat function
+rm.strat(portfolio.st)
+rm.strat(account.st)
+
+initPortf(name = portfolio.st,symbols = "NSEI",initDate = init_date)
+#Store the strategy.st using strategy function.
+strategy(strategy.st, store = TRUE)
+
+#Let us plot the closing prices of NSE and add SMA of 40 days period to it using addSMA function as #Technical indicator.
+color="red"
+chartSeries(NSEI$NSEI.Close,TA="addSMA(n=40,col=color)") 
+
+#Taking 40 day moving average of the prices and plotting the smoothened curve for NSEI
+```
+
+```{r}
+#MACD: Moving Avrage Convergence Diverdence Indicator
+chartSeries(NSEI$NSEI.Close, TA="addMACD(fast = 12, slow = 26, signal = 9, histogram = TRUE)")
+
+# The MACD indicator and the relative strength index (RSI) are two indicators used by analysts and day traders.
+# 
+# The MACD is primarily used to gauge the strength of stock price movement. It does this by measuring the divergence of two exponential moving averages (EMAs), commonly a 12-period EMA and a 26-period EMA. A MACD line is created by subtracting the 26-period EMA from the 12-period EMA, and a line showing a nine-period EMA of that calculation is plotted over the MACD's basic representation as a histogram. A zero line provides positive or negative values for the MACD. Essentially, greater separation between the 12-period EMA, and the 26-period EMA shows increased market momentum, up or down.
+4
+```
+```{r}
+
+#RSI - Relative Strength Index
+chartSeries(NSEI$NSEI.Close, TA="addRSI(n=14)")
+
+# The RSI aims to indicate whether a market is considered to be overbought or oversold in relation to recent price levels. The RSI calculates average price gains and losses over a given period of time; the default time period is 14 periods. RSI values are plotted on a scale from 0 to 100. Values over 70 are considered indicative of a market being overbought in relation to recent price levels, and values under 30 are indicative of a market that is oversold. On a more general level, readings above 50 are interpreted as bullish, and readings below 50 are interpreted as bearish.
+
+
+```
+```{r}
+#Bollinger Bands
+sma="SMA"
+bands="bands"
+color="blue"
+chartSeries(NSEI$NSEI.Close, TA="addBBands(n=20,maType=sma,draw=bands)")
+
+# Bollinger Bands are a technical indicator developed by John Bollinger. The indicator forms a channel around the price movements of an asset. The channels are based on standard deviations and a moving average. Bollinger bands can help you establish a trend's direction, spot potential reversals and monitor volatility.
+
+```
+
+```{r}
+add.indicator(strategy.st, name = "SMA", 
+                  arguments = list(x=quote(Cl(mktdata)),n=40),
+                  label='SMA_40' )
+add.indicator(strategy.st, name = "RSI", 
+                  arguments = list(x=quote(Cl(mktdata)),n=7),
+                  label='RSI_7' )
+strategy.st<-"basic_strat"
+portfolio.st<-"basic_portfolio"
+account.st<-"basic_account"
+rm.strat(portfolio.st)
+rm.strat(account.st)
+initPortf(name = portfolio.st,symbols = "NSEI",initDate = init_date)
+initAcct(name = account.st,portfolios = portfolio.st,initDate = init_date,initEq = init_equity)
+initOrders(portfolio = portfolio.st,symbols = "NSEI",initDate = init_date)
+strategy(strategy.st, store = TRUE)
+
+add.indicator(strategy = strategy.st, name = "RSI",
+              arguments = list(price = quote(Cl(mktdata)), n = 7), label = "RSI_7")
+
+#Plot the RSI of closing prices with n=7 using Chartseries function and add a line at RSI=50.
+chartSeries(RSI(NSEI$NSEI.Close,n=7),theme="black",name="RSI n=7")
+abline(a=50,b=0,col="blue")
+#Looking at the RSI graph, when RSI follows a downward trend, Investors can take go short(sell) and when its in a upward trend, they can choose to buy(go long) 
+```
+
+```{r}
+#add macd as indicator to the strategy, macd takes fastMA = 12, slowMA = 26, signalMA = 9
+
+#RSI_7 less than 50
+add.signal(strategy.st, name = "sigThreshold", arguments = list(column = "rsi.RSI_7",threshold=50,relationship="lt"), label = "RSI_lt_50")
+
+#MACD histogram crosses zero line from above
+add.signal(strategy.st, name = "sigCrossover", arguments = list(columns = c("macd.MACD","signal.MACD"),relationship="lt"),cross=TRUE, label = "macd_lt_0")
+
+#apply signal
+#The mktdata 
+fastMA = 12 
+slowMA = 26 
+signalMA = 9
+maType="EMA"
+add.indicator(strategy.st, name = "MACD", arguments = list(x=quote(Cl(mktdata)),
+              nFast=fastMA, nSlow=slowMA,histogram = TRUE), label='MACD')
+chartSeries(NSEI$NSEI.Close,TA="addMACD(fast = 12, slow = 26, signal = 9)",
+            theme="black", name="MACD 26-12-9")
+#Graph shows a period of positve MACD through 2014 and 2015  and again a positive MACD period in 2017
+#which means 12 period Moving average was more than the 26 period Moving average.
+```
+```{r}
+mktdata_ind <- applyIndicators(strategy=strategy.st,mktdata=NSEI)
+mktdata_ind[is.na(mktdata_ind)]=0
+knitr::kable(tail(mktdata_ind))
+#Notice that Indicators rsi.RSI_7, macd.MACD, signal.MACD are generated.
+```
+
+```{r}
+add.signal(strategy.st, name = "sigThreshold", arguments = list(column = "rsi.RSI_7",threshold=50,relationship="gt"), label = "RSI_gt_50")
+
+#MACD histogram crosses zero line from below
+add.signal(strategy.st, name = "sigCrossover", arguments = list(columns = c("macd.MACD","signal.MACD"),relationship="gt"), label = "macd_gt_0")
+
+#Generate a long signal
+add.signal(strategy.st, name = "sigFormula",
+  arguments = list(formula="RSI_gt_50 & macd_gt_0",
+  cross = FALSE), label = "Long")#is the ouput data obtained after applying indicators to the strategy 
+#i.e., mktdata_ind in this case.
+
+mktdata_sig <- applySignals(strategy=strategy.st,mktdata=mktdata_ind)
+mktdata_sig[is.na(mktdata_sig)]=0
+knitr::kable(tail(mktdata_sig))
+#Notice that the signals RSI_gt_50, RSI_lt_50, macd_gt_0, macd_lt_0 and Long are generated.
+```
+
+```{r}
+###add rules
+#add rule to enter the trade based on Long signal
+add.rule(strategy = strategy.st, name="ruleSignal", arguments = list(
+    sigcol = "Long", sigval = TRUE, orderqty = 100, ordertype = "market",TxnFees = -75, 
+    orderside = "long",prefer="Open", replace = FALSE), type = "enter",label='enter long')
+add.rule(strategy.st,name='ruleSignal', 
+             arguments = list(sigcol="macd_lt_0",
+                                  sigval=TRUE, 
+                                      orderqty='all', 
+                                      ordertype='market', 
+                                      orderside='long', 
+                                      prefer="Open",
+                                      TxnFees = -75,
+                                      replace=TRUE),
+                                      type='exit',
+                                      label='long exit1')
+# Using add.rule function a rule labeled as 'long exit2' is added to exit the market from long side with #orderqty all When value of Signal RSI_lt_50 is equal to "TRUE" i.e., when RSI is less than 50. type = #"exit" since we are exiting the market from long side.
+
+add.rule(strategy.st,name='ruleSignal', 
+             arguments = list(sigcol="RSI_lt_50",
+                                  sigval=TRUE, 
+                                      orderqty='all', 
+                                      ordertype='market', 
+                                      orderside='long', 
+                                      prefer="Open",
+                                      TxnFees = -75,orderset='ocolong',
+                                      replace=TRUE),
+                                      type='exit',
+                                      label='long exit2')
+
+###apply strategies
+applyStrategy(strategy = strategy.st,portfolios = portfolio.st)
+#updatePortf function calculates the PL for each period prices that are available.
+updatePortf(portfolio.st)
+#updateAcct function is used to perform equity account calculations from the portfolio data and #corresponding close prices.
+updateAcct(account.st)
+#updateEndEq function is used to calculate End.Eq and Net.Performance.
+updateEndEq(account.st)
+
+#Chart trades produce 4 charts
+chart.Posn(portfolio.st,"NSEI")
+#The graphs show the overall performance of the market with applied strategies and rules
+#The blue bars indicate the cumulative plot of market prices
+```
+
+```{r}
+#Trade Sets
+trade_stats <- tradeStats(portfolio.st)
+trade_stats1 <- as.data.frame(t(tradeStats(portfolio.st)))
+knitr::kable(trade_stats1)
+
+```
+```{r}
+#Basic trade stats
+knitr::kable(trade_stats1[c("Portfolio","Symbol","Num.Txns","Num.Trades"),])
+```
+
+```{r}
+#profit n loss trades
+knitr::kable(trade_stats1[c("Net.Trading.PL","Avg.Trade.PL","Med.Trade.PL","Std.Dev.Trade.PL","Std.Err.Trade.PL","Avg.Daily.PL","Med.Daily.PL","Std.Dev.Daily.PL","Std.Err.Daily.PL"),])
+```
+
+```{r}
+#win losstrades
+knitr::kable(trade_stats1[c("Avg.WinLoss.Ratio","Avg.Win.Trade","Med.Win.Trade","Avg.Losing.Trade","Med.Losing.Trade","Largest.Winner","Largest.Loser"),])
+
+```
+```{r}
+#sharpe ratio
+knitr::kable(trade_stats1[c("Ann.Sharpe"),])
+
+
+```
+
+```{r}
+#performance summary
+returns<-PortfReturns(Account=account.st)
+charts.PerformanceSummary(returns,colorset=bluefocus)
+
+```
+
+```{r}
+#per trade stats
+# One 'trade' is defined as a series of transactions which make up a 'round turn'. It may contain many transactions. This function reports statistics on these round turn trades which may be used on their own or which are also used by other functions
+
+knitr::kable(head(perTradeStats(portfolio.st, Symbol = "NSEI")))
+#Getting the trade statistics for NSEI for round turn trades
+#The net trading for NSEI was negative during first half of 2012 and turned positive during second half of 2012
+```
+
